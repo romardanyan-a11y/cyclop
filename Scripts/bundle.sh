@@ -8,9 +8,19 @@ CONFIG="${1:-release}"
 APP="$ROOT/build/Cyclop.app"
 VERSION="$(sed -n 's/^VERSION=//p' "$ROOT/Scripts/version" 2>/dev/null || echo 0.1.0)"
 
-echo "==> swift build -c $CONFIG"
-swift build -c "$CONFIG" --package-path "$ROOT"
-BIN="$(swift build -c "$CONFIG" --package-path "$ROOT" --show-bin-path)/Cyclop"
+# Архитектуры задаются снаружи: пусто — сборка под ту машину, где идёт сборка,
+# как и было. CYCLOP_ARCHS="x86_64 arm64" собирает universal — нужно, чтобы
+# релиз с arm-раннера запускался и на Intel-маках.
+SWIFT_ARCH=()
+CLANG_ARCH=()
+for arch in ${CYCLOP_ARCHS:-}; do
+    SWIFT_ARCH+=(--arch "$arch")
+    CLANG_ARCH+=(-arch "$arch")
+done
+
+echo "==> swift build -c $CONFIG ${SWIFT_ARCH[*]:-native}"
+swift build -c "$CONFIG" ${SWIFT_ARCH[@]+"${SWIFT_ARCH[@]}"} --package-path "$ROOT"
+BIN="$(swift build -c "$CONFIG" ${SWIFT_ARCH[@]+"${SWIFT_ARCH[@]}"} --package-path "$ROOT" --show-bin-path)/Cyclop"
 
 echo "==> assembling $APP"
 rm -rf "$APP"
@@ -67,6 +77,7 @@ done
 # into the app: it is loaded into /usr/bin/perl at runtime. See helper.m.
 echo "==> building Now Playing helper"
 clang -dynamiclib -fobjc-arc -O2 \
+    ${CLANG_ARCH[@]+"${CLANG_ARCH[@]}"} \
     -mmacosx-version-min=15.0 \
     -framework Foundation \
     -o "$APP/Contents/Resources/libcyclopmedia.dylib" \
