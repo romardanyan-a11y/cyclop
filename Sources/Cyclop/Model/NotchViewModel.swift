@@ -155,6 +155,17 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// С какой вкладки открывается вызов с клавиатуры.
+    static let hotkeyTabKey = "hotkeyTab"
+
+    /// По умолчанию — буфер: за ним к панели с клавиатуры и тянутся, и он же
+    /// список, по которому стрелкам есть где ходить. nil означает «оставить
+    /// ту, что была» — для тех, кому панель нужна там, где её оставили.
+    static var hotkeyTab: Tab? {
+        guard let raw = UserDefaults.standard.string(forKey: hotkeyTabKey) else { return .clipboard }
+        return Tab(rawValue: raw)
+    }
+
     // MARK: - Клавиатура
 
     /// Карточка под стрелками.

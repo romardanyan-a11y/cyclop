@@ -76,6 +76,10 @@ final class NotchScreenPanel {
 
     private func presentCentered() {
         isHeldByHotkey = true
+        // Вкладка ставится напрямую, а не через `select`: тот отдаёт клавиатуру
+        // текстовым вкладкам, а здесь она нужна самой панели — по ней сейчас
+        // будут ходить стрелками.
+        if let start = NotchViewModel.hotkeyTab { vm.tab = start }
         vm.keyboardIndex = 0
         state.isCentered = true
         // Кадр переставляется до открытия: панель появляется уже там, где
@@ -154,8 +158,9 @@ final class NotchScreenPanel {
     /// Пока в панели печатают, ни одна из них сюда не попадает: поле забирает
     /// и стрелки, и Esc, и отдавать их ему обязательно — иначе стрелка в
     /// заметке переключала бы вкладку вместо того, чтобы двигать курсор по
-    /// тексту. Из текстовой вкладки выходят её собственным Esc или тем же
-    /// сочетанием, которым панель вызвали.
+    /// тексту. Но печатать начинают только по Enter: просто пройти стрелками
+    /// мимо текстовой вкладки клавиатуру не отбирает, иначе выйти с неё было
+    /// бы нечем. Обратно — Esc самой вкладки.
     private func handleNavigationKey(_ code: UInt16) -> Bool {
         guard state.isCentered, state.isOpen, !state.wantsKeyboard else { return false }
         switch code {
@@ -170,7 +175,11 @@ final class NotchScreenPanel {
         case NavKey.down:
             vm.moveSelection(by: 1)
         case NavKey.ret, NavKey.enter:
-            return vm.activateSelection()
+            // На списках Enter делает то же, что клик по карточке. На
+            // текстовых вкладках делать нечего — там он передаёт клавиатуру
+            // полю, то есть начинает ввод. Обратно её отдаёт Esc самой вкладки.
+            if vm.activateSelection() { return true }
+            if vm.tab.needsKeyboard { state.wantsKeyboard = true }
         default:
             return false
         }
@@ -182,7 +191,12 @@ final class NotchScreenPanel {
     private func moveTab(by delta: Int) {
         let order = NotchViewModel.navigationOrder
         guard let current = order.firstIndex(of: vm.tab) else { return }
-        state.select(order[(current + delta + order.count) % order.count])
+        // Напрямую, а не через `select`. Тот вручает клавиатуру текстовой
+        // вкладке, стоит на неё попасть, — и стрелка, которой пользователь
+        // листал вкладки, оказывалась последней сработавшей: дальше их забирало
+        // поле ввода, и выйти с вкладки было уже нечем. Поле получает
+        // клавиатуру по Enter, то есть когда об этом попросили.
+        vm.tab = order[(current + delta + order.count) % order.count]
         vm.keyboardIndex = 0
     }
 

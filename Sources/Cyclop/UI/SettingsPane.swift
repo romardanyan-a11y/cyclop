@@ -11,6 +11,7 @@ struct SettingsPane: View {
 
     @AppStorage(NotchViewModel.hideIdleNotchKey) private var hideIdleNotch = false
     @AppStorage(HotkeyCenter.bindingKey) private var hotkey = HotkeyCenter.Binding.optionSpace.rawValue
+    @AppStorage(NotchViewModel.hotkeyTabKey) private var hotkeyTab = NotchViewModel.Tab.clipboard.rawValue
     @ObservedObject private var hotkeys = HotkeyCenter.shared
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -23,6 +24,7 @@ struct SettingsPane: View {
             VStack(alignment: .leading, spacing: 14) {
                 section(localized("General")) {
                     hotkeyRow
+                    hotkeyTabRow
                     toggleRow(
                         symbol: "eye.slash",
                         title: localized("Hide Notch When Idle"),
@@ -204,6 +206,42 @@ struct SettingsPane: View {
             .fixedSize()
         }
         .padding(.vertical, 2)
+    }
+
+    /// С какой вкладки открывается вызов с клавиатуры. Пустая строка — «как
+    /// была»: не всем нужна одна и та же вкладка каждый раз.
+    private var hotkeyTabRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "rectangle.stack")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.secondary)
+                .frame(width: 16)
+            Text(localized("Hotkey Opens"))
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.white)
+            Spacer(minLength: 8)
+            Menu {
+                Button(action: { hotkeyTab = "" }) {
+                    Text(localized("Current Tab"))
+                }
+                ForEach(NotchViewModel.navigationOrder) { tab in
+                    Button(action: { hotkeyTab = tab.rawValue }) {
+                        Text(tab.title)
+                    }
+                }
+            } label: {
+                Text(currentHotkeyTabTitle)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var currentHotkeyTabTitle: String {
+        NotchViewModel.Tab(rawValue: hotkeyTab)?.title ?? localized("Current Tab")
     }
 
     private var currentHotkeyTitle: String {
