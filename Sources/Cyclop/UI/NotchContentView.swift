@@ -196,8 +196,8 @@ struct NotchContentView: View {
             SnippetsPane(
                 snippets: vm.snippets,
                 privacy: vm.privacy,
-                wantsKeyboard: $panel.wantsKeyboard,
-                selected: panel.isCentered ? vm.keyboardIndex : nil
+                selected: panel.isCentered ? vm.keyboardIndex : nil,
+                wantsKeyboard: $panel.wantsKeyboard
             )
         case .translate:
             TranslatePane(translator: vm.translator, wantsKeyboard: $panel.wantsKeyboard)

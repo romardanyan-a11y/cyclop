@@ -298,7 +298,7 @@ final class NotchScreenPanel {
             // Область кликов считается от кадра у выреза, и посреди экрана она
             // указывает не туда. Там панель кликабельна целиком: она и открыта
             // одна на экране, и закрывается по Esc, а не уходом курсора.
-            panel?.ignoresMouseEvents = state.isCentered ? false : !interactive
+            self.panel?.ignoresMouseEvents = state.isCentered ? false : !interactive
         }
         pointer.start()
 
