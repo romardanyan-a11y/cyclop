@@ -76,11 +76,14 @@ final class NotchPanel: NSPanel {
     var onNavigationKey: ((UInt16) -> Bool)?
 
     override func sendEvent(_ event: NSEvent) {
-        // Только чистые нажатия, без модификаторов: ⌘C и соседи разбираются
-        // ниже, и перехватывать их здесь означало бы отобрать копирование у
-        // поля, в котором пользователь как раз выделил текст.
+        // Проверяются ровно четыре модификатора, а не вся маска: ⌘C и соседи
+        // разбираются ниже, и перехватывать их здесь означало бы отобрать
+        // копирование у поля, где пользователь только что выделил текст. Вся
+        // маска сюда не годится — стрелки приходят с поднятыми .function и
+        // .numericPad, и условие «модификаторов нет» отбрасывало бы каждое
+        // нажатие стрелки, ради которого всё и написано.
         if event.type == .keyDown,
-           event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
+           event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
            onNavigationKey?(event.keyCode) == true {
             return
         }
