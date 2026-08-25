@@ -56,7 +56,11 @@ final class PanelState: ObservableObject {
     }
 
     /// Size of the visible body for the current state.
-    var bodySize: CGSize { isActive ? openBodySize : geometry.collapsedBodySize }
+    /// Показ по центру всегда в полный размер: разворачиваться там не из
+    /// чего. Раскрытие от полоски к панели — жест выреза, он объясняет, откуда
+    /// панель взялась; посреди экрана та же полоска читается как непонятная
+    /// чёрточка, которая почему-то распухает.
+    var bodySize: CGSize { isCentered || isActive ? openBodySize : geometry.collapsedBodySize }
 
     /// Hover and click both land here. A tab that types takes the keyboard
     /// either way: showing a field one cannot type into is worse than briefly

@@ -78,30 +78,69 @@ final class NotchScreenPanel {
         isHeldByHotkey = true
         vm.keyboardIndex = 0
         state.isCentered = true
-        // Кадр переставляется до открытия: панель разворачивается уже там, где
+        // Кадр переставляется до открытия: панель появляется уже там, где
         // будет стоять, а не переезжает через весь экран на глазах.
         panel?.setFrame(centeredFrame(for: state.openBodySize), display: false)
         setOpen(true)
         pointer.setInside(true)
         panel?.acceptsKeyboard = true
+        // Клики включаются здесь и вручную. Обычно этим ведает наблюдатель за
+        // курсором — он поднимает флаг, когда курсор входит в панель. При
+        // вызове с клавиатуры курсор в другом месте и никуда не входит, так
+        // что флаг остался бы с прошлого раза поднятым: клики проваливались бы
+        // сквозь панель в окно под ней, кнопки не работали бы вовсе, а
+        // глобальный монитор считал бы такой клик кликом мимо и закрывал бы
+        // панель под руками.
+        panel?.ignoresMouseEvents = false
     }
 
+    /// Закрытие показа по центру — разом, без анимации.
+    ///
+    /// Не через `setOpen`: он складывает панель к вырезу, и путь «содержимое
+    /// прыгнуло наверх и сложилось там» видно. Панель посреди экрана не
+    /// разворачивалась — ей нечего и складывать; она просто исчезает, а окно
+    /// тем временем возвращается к вырезу за кулисами.
     private func dismissCentered() {
         isHeldByHotkey = false
-        setOpen(false)
+        guard state.isCentered else {
+            setOpen(false)
+            pointer.setInside(false)
+            return
+        }
+        if isPinned { vm.teleprompter.suspend() }
+        openGeneration += 1
+        closeActiveRectWork?.cancel()
+        panel?.acceptsKeyboard = false
+        // Тот же приём, что и в `NotchPanel.releaseKey`: окно уходит с экрана и
+        // возвращается в пределах одного прохода, и переезд кадра в этот
+        // промежуток никто не видит.
+        panel?.orderOut(nil)
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            state.isCentered = false
+            state.wantsKeyboard = false
+            state.isOpen = false
+        }
+        applyActiveRect(open: false)
         pointer.setInside(false)
+        panel?.setFrame(geometry.windowFrame, display: false)
+        DispatchQueue.main.async { [weak self] in
+            self?.panel?.orderFrontRegardless()
+        }
     }
 
-    /// Возврат к вырезу. Отдельно от `setOpen`, потому что кадр нельзя вернуть
-    /// сразу: панель ещё складывается, и переезд в этот момент был бы виден.
+    /// Возврат к вырезу для всех прочих причин закрытия — сон экрана, смена
+    /// пространства, перестройка дисплеев. Esc, повторное сочетание и клик
+    /// мимо идут через `dismissCentered`, где закрытие мгновенное.
     private func restoreNotchFrame() {
         guard state.isCentered else { return }
         state.isCentered = false
         panel?.acceptsKeyboard = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) { [weak self] in
-            guard let self, !state.isCentered else { return }
-            panel?.releaseKey()
-            panel?.setFrame(geometry.windowFrame, display: false)
+        panel?.orderOut(nil)
+        panel?.setFrame(geometry.windowFrame, display: false)
+        DispatchQueue.main.async { [weak self] in
+            self?.panel?.orderFrontRegardless()
         }
     }
 
@@ -170,10 +209,20 @@ final class NotchScreenPanel {
         )
     }
 
-    /// Снять удержание, не закрывая: закроет обычная проверка курсора на
-    /// ближайшем такте, и закроет по тем же правилам, что и всегда.
+    /// Клик мимо панели. По центру закрывает сразу, у выреза — снимает
+    /// удержание и оставляет закрытие обычной проверке курсора.
+    ///
+    /// Клик по самой панели сюда доходить не должен: события своему приложению
+    /// глобальный монитор не показывает. Проверка кадра всё равно стоит —
+    /// панель может не успеть забрать клик, и цена ошибки тут велика:
+    /// закрыться под рукой в момент нажатия на кнопку.
     func releaseHotkeyHold() {
-        isHeldByHotkey = false
+        if let frame = panel?.frame, frame.contains(NSEvent.mouseLocation) { return }
+        if state.isCentered {
+            dismissCentered()
+        } else {
+            isHeldByHotkey = false
+        }
     }
 
     /// Same display, same notch, moved: keep the panel and everything on it.
