@@ -14,6 +14,9 @@ enum Theme {
     static let collapsedBottomRadius: CGFloat = 9
     static let openTopRadius: CGFloat = 12
     static let openBottomRadius: CGFloat = 22
+    /// Показ по центру: одинаковое скругление по всем четырём углам, потому
+    /// что ни один из них больше не упирается в кромку экрана.
+    static let centeredRadius: CGFloat = 20
 
     static let secondary = Color.white.opacity(0.55)
     static let tertiary = Color.white.opacity(0.32)

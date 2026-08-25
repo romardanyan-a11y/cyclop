@@ -64,12 +64,110 @@ final class NotchScreenPanel {
         pointer.setInside(state.isOpen)
     }
 
-    /// То же с клавиатуры, но открытое остаётся стоять без курсора.
+    /// То же с клавиатуры, но панель выходит посреди экрана, забирает
+    /// клавиатуру и остаётся стоять без курсора.
     func toggleFromHotkey() {
-        let opening = !state.isOpen
-        isHeldByHotkey = opening
-        setOpen(opening)
-        pointer.setInside(opening)
+        if state.isOpen {
+            dismissCentered()
+        } else {
+            presentCentered()
+        }
+    }
+
+    private func presentCentered() {
+        isHeldByHotkey = true
+        vm.keyboardIndex = 0
+        state.isCentered = true
+        // Кадр переставляется до открытия: панель разворачивается уже там, где
+        // будет стоять, а не переезжает через весь экран на глазах.
+        panel?.setFrame(centeredFrame(for: state.openBodySize), display: false)
+        setOpen(true)
+        pointer.setInside(true)
+        panel?.acceptsKeyboard = true
+    }
+
+    private func dismissCentered() {
+        isHeldByHotkey = false
+        setOpen(false)
+        pointer.setInside(false)
+    }
+
+    /// Возврат к вырезу. Отдельно от `setOpen`, потому что кадр нельзя вернуть
+    /// сразу: панель ещё складывается, и переезд в этот момент был бы виден.
+    private func restoreNotchFrame() {
+        guard state.isCentered else { return }
+        state.isCentered = false
+        panel?.acceptsKeyboard = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) { [weak self] in
+            guard let self, !state.isCentered else { return }
+            panel?.releaseKey()
+            panel?.setFrame(geometry.windowFrame, display: false)
+        }
+    }
+
+    /// Стрелки, Enter и Esc в показе по центру.
+    ///
+    /// Пока в панели печатают, ни одна из них сюда не попадает: поле забирает
+    /// и стрелки, и Esc, и отдавать их ему обязательно — иначе стрелка в
+    /// заметке переключала бы вкладку вместо того, чтобы двигать курсор по
+    /// тексту. Из текстовой вкладки выходят её собственным Esc или тем же
+    /// сочетанием, которым панель вызвали.
+    private func handleNavigationKey(_ code: UInt16) -> Bool {
+        guard state.isCentered, state.isOpen, !state.wantsKeyboard else { return false }
+        switch code {
+        case NavKey.escape:
+            dismissCentered()
+        case NavKey.left:
+            moveTab(by: -1)
+        case NavKey.right:
+            moveTab(by: 1)
+        case NavKey.up:
+            vm.moveSelection(by: -1)
+        case NavKey.down:
+            vm.moveSelection(by: 1)
+        case NavKey.ret, NavKey.enter:
+            return vm.activateSelection()
+        default:
+            return false
+        }
+        return true
+    }
+
+    /// Вкладки заворачиваются по кругу: их девять, они стоят кольцом на двух
+    /// рейках, и упор в край здесь означал бы только лишние нажатия.
+    private func moveTab(by delta: Int) {
+        let order = NotchViewModel.navigationOrder
+        guard let current = order.firstIndex(of: vm.tab) else { return }
+        state.select(order[(current + delta + order.count) % order.count])
+        vm.keyboardIndex = 0
+    }
+
+    /// Коды физических клавиш: они не зависят от раскладки, в отличие от того,
+    /// что клавиша печатает.
+    private enum NavKey {
+        static let escape: UInt16 = 53
+        static let ret: UInt16 = 36
+        static let enter: UInt16 = 76
+        static let left: UInt16 = 123
+        static let right: UInt16 = 124
+        static let down: UInt16 = 125
+        static let up: UInt16 = 126
+    }
+
+    /// Кадр окна для показа по центру.
+    ///
+    /// Размер окна не меняется — меняется только его место. Содержимое лежит у
+    /// верхней кромки окна, поэтому чтобы середина панели встала в середину
+    /// экрана, окно опускается на свою высоту и поднимается на половину тела.
+    private func centeredFrame(for body: CGSize) -> CGRect {
+        let size = geometry.windowSize
+        let screen = geometry.screen.frame
+        return CGRect(
+            x: screen.midX - size.width / 2,
+            y: screen.midY - size.height + body.height / 2,
+            width: size.width,
+            height: size.height
+        )
     }
 
     /// Снять удержание, не закрывая: закроет обычная проверка курсора на
@@ -152,6 +250,9 @@ final class NotchScreenPanel {
             state.wantsKeyboard = true
         }
 
+        panel.onNavigationKey = { [weak self] code in
+            self?.handleNavigationKey(code) ?? false
+        }
         panel.contentView = root
         panel.ignoresMouseEvents = true
         panel.setFrame(geometry.windowFrame, display: false)
@@ -179,8 +280,10 @@ final class NotchScreenPanel {
         pointer.onChange = { [weak self] inside in
             guard let self else { return }
             // Курсор пришёл — дальше решает он, как и всегда: удержание было
-            // нужно ровно до этого момента.
-            if inside { isHeldByHotkey = false }
+            // нужно ровно до этого момента. Кроме показа по центру: там верх
+            // экрана к панели отношения не имеет, и курсор, заброшенный к
+            // вырезу, закрыл бы то, что открыто совсем в другом месте.
+            if inside, !state.isCentered { isHeldByHotkey = false }
             // The one place the pointer does not decide — see `holdsOpen`.
             // Guarded here rather than inside `setOpen` so that the reasons
             // that are not the pointer, like the screen going to sleep, still
@@ -191,7 +294,11 @@ final class NotchScreenPanel {
         // Everything outside the visible panel must reach the app underneath:
         // a `nil` from hitTest only discards the event, it does not forward it.
         pointer.onInteractiveChange = { [weak self] interactive in
-            self?.panel?.ignoresMouseEvents = !interactive
+            guard let self else { return }
+            // Область кликов считается от кадра у выреза, и посреди экрана она
+            // указывает не туда. Там панель кликабельна целиком: она и открыта
+            // одна на экране, и закрывается по Esc, а не уходом курсора.
+            panel?.ignoresMouseEvents = state.isCentered ? false : !interactive
         }
         pointer.start()
 
@@ -256,10 +363,13 @@ final class NotchScreenPanel {
             setOpen(true)
             pointer.setInside(true)
         }
-        panel?.acceptsKeyboard = wants
+        // Посреди экрана клавиатура нужна самой панели — по ней ходят
+        // стрелками. Иначе смена вкладки на нетекстовую погасила бы ключ, и
+        // следующая стрелка ушла бы в приложение под панелью.
+        panel?.acceptsKeyboard = wants || state.isCentered
         // What was typed stays: clicking away to look something up should not
         // be the same as throwing the text out. Esc and the ✕ do that.
-        if !wants {
+        if !wants, !state.isCentered {
             // An open panel hands the keyboard back in `collapse`, a pass after
             // the fold has started — see `NotchPanel.releaseKey`. Closed, there
             // is no animation to protect, so it goes at once (#44).
@@ -289,8 +399,11 @@ final class NotchScreenPanel {
         guard state.isOpen != open else { return }
         // Закрытие любой причиной снимает удержание: иначе оно пережило бы сон
         // экрана и смену пространства и встретило бы пользователя панелью,
-        // открытой неизвестно когда.
-        if !open { isHeldByHotkey = false }
+        // открытой неизвестно когда. С ним же панель возвращается к вырезу.
+        if !open {
+            isHeldByHotkey = false
+            restoreNotchFrame()
+        }
         // Closing ends the take, but only on the screen reading it: the pin is
         // a consequence of the script moving, so the script stops with the
         // panel it is moving on — and not with any other panel folding away.
@@ -365,6 +478,11 @@ final class NotchScreenPanel {
 
     /// Re-cuts both rects for the body currently on screen.
     private func refreshOpenRects() {
+        // Телесуфлёр тянется на 400 pt вместо 208, и середина панели вместе с
+        // ним уезжает: кадр пересчитывается, иначе вкладка вылезла бы вниз.
+        if state.isCentered, state.isOpen {
+            panel?.setFrame(centeredFrame(for: state.openBodySize), display: true)
+        }
         guard state.isOpen else { return }
         applyActiveRect(open: true)
         pointer.closeRect = geometry.hoverRect(for: state.openBodySize)

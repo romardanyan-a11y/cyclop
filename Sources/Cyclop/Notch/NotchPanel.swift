@@ -71,7 +71,19 @@ final class NotchPanel: NSPanel {
     /// be noticed is here, where every event the window receives passes.
     var onPress: (() -> Void)?
 
+    /// Стрелки, Enter и Esc, когда панель вызвана с клавиатуры. Возвращает
+    /// true, если нажатие обработано и нести его дальше не нужно.
+    var onNavigationKey: ((UInt16) -> Bool)?
+
     override func sendEvent(_ event: NSEvent) {
+        // Только чистые нажатия, без модификаторов: ⌘C и соседи разбираются
+        // ниже, и перехватывать их здесь означало бы отобрать копирование у
+        // поля, в котором пользователь как раз выделил текст.
+        if event.type == .keyDown,
+           event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
+           onNavigationKey?(event.keyCode) == true {
+            return
+        }
         if event.type == .keyDown, editingAction(for: event) != nil, perform(event) { return }
         // Before `super`, so the window is already key by the time the click
         // reaches the field and places a caret.

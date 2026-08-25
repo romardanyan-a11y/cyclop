@@ -3,6 +3,9 @@ import SwiftUI
 struct ClipboardPane: View {
     @ObservedObject var clipboard: ClipboardStore
     @ObservedObject var privacy: PrivacyMode
+    /// Карточка под стрелками, когда панель вызвана с клавиатуры. nil —
+    /// вызвана мышью, и выделять нечего: там карточку показывает курсор.
+    var selected: Int?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -12,13 +15,29 @@ struct ClipboardPane: View {
                     .foregroundStyle(Theme.tertiary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 3) {
-                        ForEach(clipboard.items) { item in
-                            ClipRow(item: item, clipboard: clipboard, privacy: privacy)
+                // Список длиннее окна, а стрелки ходят по всему списку —
+                // без доводки выделение ушло бы под нижний край и дальше
+                // двигалось бы вслепую.
+                ScrollViewReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 3) {
+                            ForEach(Array(clipboard.items.enumerated()), id: \.element.id) { index, item in
+                                ClipRow(
+                                    item: item,
+                                    clipboard: clipboard,
+                                    privacy: privacy,
+                                    isSelected: index == selected
+                                )
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .onChange(of: selected) { _, index in
+                        guard let index, clipboard.items.indices.contains(index) else { return }
+                        withAnimation(Theme.contentAnimation) {
+                            proxy.scrollTo(clipboard.items[index].id, anchor: .center)
                         }
                     }
-                    .padding(.vertical, 4)
                 }
                 footer
             }
@@ -43,6 +62,7 @@ private struct ClipRow: View {
     let item: ClipItem
     @ObservedObject var clipboard: ClipboardStore
     @ObservedObject var privacy: PrivacyMode
+    var isSelected = false
     @State private var hovering = false
     @State private var justCopied = false
 
@@ -76,7 +96,14 @@ private struct ClipRow: View {
         .frame(height: 26)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(hovering ? Theme.surfaceHover : Theme.surface)
+                .fill(hovering || isSelected ? Theme.surfaceHover : Theme.surface)
+        )
+        // Обводка, а не только заливка: заливка выделения и заливка наведения
+        // совпадают, и без контура две карточки под курсором и под стрелками
+        // выглядели бы одинаково.
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(Color.white.opacity(isSelected ? 0.5 : 0), lineWidth: 1)
         )
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -85,6 +112,7 @@ private struct ClipRow: View {
             flash($justCopied)
         }
         .animation(Theme.contentAnimation, value: hovering)
+        .animation(Theme.contentAnimation, value: isSelected)
         .animation(Theme.contentAnimation, value: justCopied)
     }
 }

@@ -3,6 +3,8 @@ import SwiftUI
 struct SnippetsPane: View {
     @ObservedObject var snippets: SnippetStore
     @ObservedObject var privacy: PrivacyMode
+    /// Карточка под стрелками, когда панель вызвана с клавиатуры.
+    var selected: Int?
     /// Whether the panel holds the keyboard, so the fields can follow it.
     @Binding var wantsKeyboard: Bool
 
@@ -222,19 +224,31 @@ struct SnippetsPane: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 3) {
-                    ForEach(snippets.filtered) { item in
-                        SnippetRow(
-                            item: item,
-                            snippets: snippets,
-                            privacy: privacy,
-                            wantsKeyboard: $wantsKeyboard
-                        )
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 3) {
+                        ForEach(Array(snippets.filtered.enumerated()), id: \.element.id) { index, item in
+                            SnippetRow(
+                                item: item,
+                                snippets: snippets,
+                                privacy: privacy,
+                                wantsKeyboard: $wantsKeyboard,
+                                isSelected: index == selected
+                            )
+                        }
+                    }
+                    .animation(Theme.contentAnimation, value: snippets.items)
+                    .padding(.bottom, 2)
+                }
+                // Та же доводка, что и в буфере: заготовок бывает больше, чем
+                // помещается, и выделение обязано оставаться видимым.
+                .onChange(of: selected) { _, index in
+                    let list = snippets.filtered
+                    guard let index, list.indices.contains(index) else { return }
+                    withAnimation(Theme.contentAnimation) {
+                        proxy.scrollTo(list[index].id, anchor: .center)
                     }
                 }
-                .animation(Theme.contentAnimation, value: snippets.items)
-                .padding(.bottom, 2)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -247,6 +261,7 @@ private struct SnippetRow: View {
     @ObservedObject var privacy: PrivacyMode
     /// Editing needs the keyboard, and the panel only takes it when asked.
     @Binding var wantsKeyboard: Bool
+    var isSelected = false
     @State private var hovering = false
     @State private var justCopied = false
     /// Set by a double click. While it is on, the row shows two fields instead
@@ -382,7 +397,13 @@ private struct SnippetRow: View {
         .frame(height: editing ? 28 : 26)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(editing || hovering ? Theme.surfaceHover : Theme.surface)
+                .fill(editing || hovering || isSelected ? Theme.surfaceHover : Theme.surface)
+        )
+        // Обводка отличает карточку под стрелками от карточки под курсором:
+        // заливка у них одна и та же.
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(Color.white.opacity(isSelected ? 0.5 : 0), lineWidth: 1)
         )
         .contentShape(Rectangle())
         .onHover { hovering = $0 }

@@ -27,6 +27,14 @@ final class PanelState: ObservableObject {
         self.vm = vm
     }
 
+    /// Панель вызвана с клавиатуры и показана посреди экрана.
+    ///
+    /// Наведение мышью оставляет её у верхней кромки, как и было: там она —
+    /// продолжение выреза, и форма с вогнутыми плечами держится за кромку.
+    /// Посреди экрана держаться не за что, поэтому там она рисуется обычным
+    /// скруглённым прямоугольником.
+    @Published var isCentered = false
+
     /// Whether this screen is showing anything beyond the bare notch.
     var isActive: Bool { isOpen || isDropTargeted }
 

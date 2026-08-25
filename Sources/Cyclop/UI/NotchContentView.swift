@@ -25,14 +25,26 @@ struct NotchContentView: View {
         // The shape is wider than the body by `topRadius` on each side: that
         // slack is where the concave shoulders live, so it must not be clipped.
         ZStack(alignment: .top) {
-            NotchShape(
-                topRadius: topRadius,
-                bottomRadius: isOpen ? Theme.openBottomRadius : Theme.collapsedBottomRadius
-            )
-            .fill(Color.black)
-            .frame(width: size.width + 2 * topRadius, height: size.height)
+            // Форма выреза держится за верхнюю кромку экрана вогнутыми
+            // плечами: они втекают в кромку и только рядом с ней читаются как
+            // вырез. Посреди экрана держаться не за что, и там панель — просто
+            // скруглённый прямоугольник.
+            Group {
+                if panel.isCentered {
+                    RoundedRectangle(cornerRadius: Theme.centeredRadius, style: .continuous)
+                        .fill(Color.black)
+                        .frame(width: size.width, height: size.height)
+                } else {
+                    NotchShape(
+                        topRadius: topRadius,
+                        bottomRadius: isOpen ? Theme.openBottomRadius : Theme.collapsedBottomRadius
+                    )
+                    .fill(Color.black)
+                    .frame(width: size.width + 2 * topRadius, height: size.height)
+                    .opacity(showsIdleShape ? 1 : 0)
+                }
+            }
             .shadow(color: .black.opacity(isOpen ? 0.5 : 0), radius: 18, y: 8)
-            .opacity(showsIdleShape ? 1 : 0)
 
             VStack(spacing: 0) {
                 header
@@ -70,7 +82,11 @@ struct NotchContentView: View {
                     .transition(.opacity)
             }
             Spacer(minLength: 0)
-            Color.clear.frame(width: panel.geometry.notchSize.width, height: 1)
+            // Распорка шириной с вырез — то место, которое шапка обязана ему
+            // оставить. Посреди экрана оставлять нечего.
+            if !panel.isCentered {
+                Color.clear.frame(width: panel.geometry.notchSize.width, height: 1)
+            }
             Spacer(minLength: 0)
             if isOpen {
                 trailing
@@ -169,11 +185,20 @@ struct NotchContentView: View {
         case .shelf:
             ShelfPane(shelf: vm.shelf, isTargeted: panel.isDropTargeted)
         case .clipboard:
-            ClipboardPane(clipboard: vm.clipboard, privacy: vm.privacy)
+            ClipboardPane(
+                clipboard: vm.clipboard,
+                privacy: vm.privacy,
+                selected: panel.isCentered ? vm.keyboardIndex : nil
+            )
         case .calendar:
             CalendarPane(calendar: vm.calendar, privacy: vm.privacy)
         case .snippets:
-            SnippetsPane(snippets: vm.snippets, privacy: vm.privacy, wantsKeyboard: $panel.wantsKeyboard)
+            SnippetsPane(
+                snippets: vm.snippets,
+                privacy: vm.privacy,
+                wantsKeyboard: $panel.wantsKeyboard,
+                selected: panel.isCentered ? vm.keyboardIndex : nil
+            )
         case .translate:
             TranslatePane(translator: vm.translator, wantsKeyboard: $panel.wantsKeyboard)
         case .notes:

@@ -155,6 +155,57 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Клавиатура
+
+    /// Карточка под стрелками.
+    ///
+    /// Индекс, а не идентификатор: список буфера перестраивается на каждом
+    /// копировании — скопированное уезжает наверх, — и выделение по
+    /// идентификатору уехало бы вместе с ним. Индекс остаётся там, где стоял,
+    /// что для «пробежаться сверху вниз» и есть нужное поведение.
+    @Published var keyboardIndex = 0
+
+    /// Вкладки в том порядке, в каком они стоят на рейках: слева направо по
+    /// экрану, а не в порядке объявления в enum.
+    static var navigationOrder: [Tab] { Tab.leftRail + Tab.rightRail }
+
+    /// Сколько карточек на текущей вкладке доступно стрелкам. Ноль означает,
+    /// что вверх-вниз здесь не значат ничего — вкладка не список.
+    var navigableCount: Int {
+        switch tab {
+        case .clipboard: return clipboard.items.count
+        case .snippets: return snippets.filtered.count
+        default: return 0
+        }
+    }
+
+    /// Выделение не заворачивается с конца на начало: список короткий, и
+    /// упор в край — понятный ответ «дальше некуда», а прыжок через весь
+    /// список на месте, где ждёшь остановки, читается как промах.
+    func moveSelection(by delta: Int) {
+        let count = navigableCount
+        guard count > 0 else { return }
+        keyboardIndex = min(max(keyboardIndex + delta, 0), count - 1)
+    }
+
+    /// Enter по выделенной карточке делает ровно то же, что клик по ней.
+    @discardableResult
+    func activateSelection() -> Bool {
+        switch tab {
+        case .clipboard:
+            guard clipboard.items.indices.contains(keyboardIndex) else { return false }
+            clipboard.copy(clipboard.items[keyboardIndex])
+            return true
+        case .snippets:
+            let list = snippets.filtered
+            guard list.indices.contains(keyboardIndex) else { return false }
+            snippets.copy(list[keyboardIndex])
+            return true
+        default:
+            return false
+        }
+    }
+
     /// Прятать сложенную панель целиком на маках без выреза. Полоска в 8 pt
     /// закрывает мало, но у верхнего края видна — кому мешает и она, тот
     /// убирает её отсюда, а область наведения остаётся прежней.
