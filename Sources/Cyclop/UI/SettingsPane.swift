@@ -10,7 +10,8 @@ struct SettingsPane: View {
     @ObservedObject var shelf: ShelfStore
 
     @AppStorage(NotchViewModel.hideIdleNotchKey) private var hideIdleNotch = false
-    @AppStorage(HotkeyCenter.bindingKey) private var hotkey = HotkeyCenter.Binding.commandOptionSpace.rawValue
+    @AppStorage(HotkeyCenter.bindingKey) private var hotkey = HotkeyCenter.Binding.optionSpace.rawValue
+    @ObservedObject private var hotkeys = HotkeyCenter.shared
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var saveClipboardImages = NotchViewModel.saveClipboardImagesEnabled
@@ -178,6 +179,15 @@ struct SettingsPane: View {
             Text(localized("Show Panel Hotkey"))
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(.white)
+            // Занятое сочетание выглядит точно как работающее — ничего не
+            // происходит по нажатию, и разницы между «не поймали» и «поймали и
+            // не сработало» пользователю не видно. Поэтому отказ подписан.
+            if !hotkeys.isClaimed {
+                Text(localized("In Use"))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.orange)
+                    .padding(.leading, 6)
+            }
             Spacer(minLength: 8)
             Menu {
                 ForEach(HotkeyCenter.Binding.allCases, id: \.rawValue) { option in
@@ -197,7 +207,7 @@ struct SettingsPane: View {
     }
 
     private var currentHotkeyTitle: String {
-        (HotkeyCenter.Binding(rawValue: hotkey) ?? .commandOptionSpace).title
+        (HotkeyCenter.Binding(rawValue: hotkey) ?? .optionSpace).title
     }
 
     private func toggleRow(symbol: String, title: String, isOn: Binding<Bool>) -> some View {

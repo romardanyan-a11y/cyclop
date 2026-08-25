@@ -11,19 +11,23 @@ import Carbon.HIToolbox
 /// claimed the combination, need no trust, and work while the app is inactive,
 /// which an `.accessory` app always is.
 @MainActor
-final class HotkeyCenter {
+final class HotkeyCenter: ObservableObject {
     static let shared = HotkeyCenter()
 
-    /// What the panel is bound to. Every option is Space with different
-    /// modifiers: the combinations people already reach for blindly are all
-    /// Space-based, and one keycode keeps the setting a list rather than a
-    /// recorder nobody asked for.
+    /// What the panel is bound to.
+    ///
+    /// Every option is Space with different modifiers, and every one of them is
+    /// free of a macOS default. That is the whole list's reason for being what
+    /// it is: ⌘Space is Spotlight, ⌘⌥Space opens the Finder search window,
+    /// ⌃Space and ⌃⌥Space switch input sources. All four are registered by the
+    /// system before any app runs, and the system wins — an app that offers one
+    /// of them offers a shortcut that silently does nothing.
     enum Binding: Int, CaseIterable {
         case off = 0
         case optionSpace = 1
-        case commandOptionSpace = 2
-        case controlSpace = 3
-        case shiftCommandSpace = 4
+        case shiftCommandSpace = 2
+        case optionShiftSpace = 3
+        case controlOptionCommandSpace = 4
 
         /// Carbon modifier mask. `optionKey` and friends are the Carbon
         /// constants, unrelated to `NSEvent.ModifierFlags`.
@@ -31,9 +35,9 @@ final class HotkeyCenter {
             switch self {
             case .off: return 0
             case .optionSpace: return UInt32(optionKey)
-            case .commandOptionSpace: return UInt32(cmdKey | optionKey)
-            case .controlSpace: return UInt32(controlKey)
             case .shiftCommandSpace: return UInt32(shiftKey | cmdKey)
+            case .optionShiftSpace: return UInt32(optionKey | shiftKey)
+            case .controlOptionCommandSpace: return UInt32(controlKey | optionKey | cmdKey)
             }
         }
 
@@ -43,28 +47,36 @@ final class HotkeyCenter {
             switch self {
             case .off: return localized("Off")
             case .optionSpace: return "⌥Space"
-            case .commandOptionSpace: return "⌘⌥Space"
-            case .controlSpace: return "⌃Space"
             case .shiftCommandSpace: return "⇧⌘Space"
+            case .optionShiftSpace: return "⌥⇧Space"
+            case .controlOptionCommandSpace: return "⌃⌥⌘Space"
             }
         }
     }
 
     static let bindingKey = "panelHotkey"
 
-    /// ⌘⌥Space by default: ⌥Space belongs to Alfred on a great many Macs and
-    /// ⌃Space to the input-source switcher on the rest, and a default that
-    /// silently loses to something already installed reads as a broken feature.
     static var currentBinding: Binding {
         let defaults = UserDefaults.standard
-        guard defaults.object(forKey: bindingKey) != nil else { return .commandOptionSpace }
-        return Binding(rawValue: defaults.integer(forKey: bindingKey)) ?? .commandOptionSpace
+        guard defaults.object(forKey: bindingKey) != nil else { return .optionSpace }
+        return Binding(rawValue: defaults.integer(forKey: bindingKey)) ?? .optionSpace
     }
+
+    /// Whether the current binding is actually held.
+    ///
+    /// Published because the honest answer is sometimes no, and the only place
+    /// that can say so is the settings row where the combination was picked.
+    /// The first version of this swallowed the refusal: `RegisterEventHotKey`
+    /// returned an error, the code returned early, and the shortcut looked
+    /// identical to one that was working — which is the worst way for anything
+    /// to fail, and it cost an afternoon to notice.
+    @Published private(set) var isClaimed = true
 
     var onFire: (() -> Void)?
 
     private var hotKey: EventHotKeyRef?
     private var handler: EventHandlerRef?
+    private var applied: Binding?
     private static let signature: OSType = 0x43_59_43_50 // 'CYCP'
     private static let identifier: UInt32 = 1
     private static let spaceKeyCode = UInt32(kVK_Space)
@@ -76,23 +88,35 @@ final class HotkeyCenter {
         apply()
         // The setting lives in the panel's own Settings tab, so the change
         // arrives while the app is running and has to take effect there and
-        // then. Cheap to re-register: unregistering and claiming again is two
-        // calls, and nothing else in this app writes defaults often enough for
-        // the notification to be a load.
+        // then.
         NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.apply() }
+            MainActor.assumeIsolated { self?.applyIfChanged() }
         }
+    }
+
+    /// Re-registering costs two trap calls, but `didChangeNotification` fires
+    /// for every default this app writes — the shelf, the clipboard, the tab —
+    /// and dropping the hotkey for an instant on each of those is a shortcut
+    /// that misses keystrokes for reasons the user will never connect to
+    /// copying a file.
+    private func applyIfChanged() {
+        guard Self.currentBinding != applied else { return }
+        apply()
     }
 
     /// Claims the current binding, releasing whatever was held before.
     func apply() {
         unregister()
         let binding = Self.currentBinding
-        guard binding != .off else { return }
+        applied = binding
+        guard binding != .off else {
+            isClaimed = true
+            return
+        }
         var ref: EventHotKeyRef?
         let id = EventHotKeyID(signature: Self.signature, id: Self.identifier)
         let status = RegisterEventHotKey(
@@ -103,11 +127,10 @@ final class HotkeyCenter {
             0,
             &ref
         )
-        // A combination already claimed by another app comes back as an error
-        // rather than a silent no-op. Nothing is shown: the user is one menu
-        // away from picking another, and a dialog from a menu bar app that
-        // never opened a window is worse than a shortcut that does nothing.
-        guard status == noErr else { return }
+        // A combination already claimed — by macOS itself or by another app —
+        // comes back as an error rather than a silent no-op. It is reported,
+        // not hidden: see `isClaimed`.
+        isClaimed = status == noErr
         hotKey = ref
     }
 
