@@ -1,0 +1,46 @@
+name: universal
+
+# Релизы собираются на arm-раннере и получаются arm64-only: на Intel-маках такой
+# бандл не запускается вовсе, а Rosetta тут не помощник — она переводит в другую
+# сторону. Этот прогон собирает universal (x86_64 + arm64) и кладёт .app
+# артефактом.
+on:
+  workflow_dispatch:
+
+jobs:
+  universal:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Версия Swift
+        run: swift --version
+
+      - name: Сборка universal
+        env:
+          CYCLOP_ARCHS: x86_64 arm64
+        run: ./Scripts/bundle.sh release
+
+      - name: Проверить, что бандл действительно universal
+        run: |
+          APP=build/Cyclop.app
+          lipo -info "$APP/Contents/MacOS/Cyclop"
+          lipo -info "$APP/Contents/Resources/libcyclopmedia.dylib"
+          # Ради этого всё и затевалось: если x86_64 не попал в бандл, дальше
+          # нести нечего.
+          lipo -info "$APP/Contents/MacOS/Cyclop" | grep -q x86_64
+          lipo -info "$APP/Contents/Resources/libcyclopmedia.dylib" | grep -q x86_64
+          test -f "$APP/Contents/Resources/en.lproj/Localizable.strings"
+          test -f "$APP/Contents/Resources/ru.lproj/Localizable.strings"
+          codesign --verify --strict "$APP"
+
+      - name: Упаковать
+        # Через архив, а не напрямую: actions/upload-artifact теряет права на
+        # исполняемый файл и ломает подпись, а .app — это каталог.
+        run: ditto -c -k --keepParent build/Cyclop.app Cyclop-universal.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cyclop-universal
+          path: Cyclop-universal.zip
+          retention-days: 7

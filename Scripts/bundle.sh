@@ -8,9 +8,40 @@ CONFIG="${1:-release}"
 APP="$ROOT/build/Cyclop.app"
 VERSION="$(sed -n 's/^VERSION=//p' "$ROOT/Scripts/version" 2>/dev/null || echo 0.1.0)"
 
-echo "==> swift build -c $CONFIG"
-swift build -c "$CONFIG" --package-path "$ROOT"
-BIN="$(swift build -c "$CONFIG" --package-path "$ROOT" --show-bin-path)/Cyclop"
+# Архитектуры задаются снаружи: пусто — сборка под ту машину, где идёт сборка,
+# как и было. CYCLOP_ARCHS="x86_64 arm64" собирает universal — нужно, чтобы
+# релиз с arm-раннера запускался и на Intel-маках.
+CLANG_ARCH=()
+for arch in ${CYCLOP_ARCHS:-}; do
+    CLANG_ARCH+=(-arch "$arch")
+done
+
+mkdir -p "$ROOT/build"
+
+if [ -z "${CYCLOP_ARCHS:-}" ]; then
+    echo "==> swift build -c $CONFIG (native)"
+    swift build -c "$CONFIG" --package-path "$ROOT"
+    BIN="$(swift build -c "$CONFIG" --package-path "$ROOT" --show-bin-path)/Cyclop"
+else
+    # Архитектуры собираются по одной и склеиваются lipo. Передать их одним
+    # вызовом — `swift build --arch x86_64 --arch arm64` — нельзя: на двух
+    # --arch SwiftPM уходит на сборочный бэкенд Xcode и падает там пачкой
+    # «duplicate output file» на каждый .o модуля. clang universal умеет сам,
+    # ему ниже отдаются оба -arch сразу.
+    SLICES=()
+    for arch in $CYCLOP_ARCHS; do
+        echo "==> swift build -c $CONFIG --arch $arch"
+        swift build -c "$CONFIG" --arch "$arch" --package-path "$ROOT"
+        # Срез копируется сразу: пути сборки у архитектур могут совпасть, и
+        # тогда lipo получил бы один и тот же файл дважды.
+        cp "$(swift build -c "$CONFIG" --arch "$arch" --package-path "$ROOT" --show-bin-path)/Cyclop" \
+           "$ROOT/build/Cyclop-$arch"
+        SLICES+=("$ROOT/build/Cyclop-$arch")
+    done
+    echo "==> lipo -create ${CYCLOP_ARCHS}"
+    lipo -create "${SLICES[@]}" -output "$ROOT/build/Cyclop-universal"
+    BIN="$ROOT/build/Cyclop-universal"
+fi
 
 echo "==> assembling $APP"
 rm -rf "$APP"
@@ -67,6 +98,7 @@ done
 # into the app: it is loaded into /usr/bin/perl at runtime. See helper.m.
 echo "==> building Now Playing helper"
 clang -dynamiclib -fobjc-arc -O2 \
+    ${CLANG_ARCH[@]+"${CLANG_ARCH[@]}"} \
     -mmacosx-version-min=15.0 \
     -framework Foundation \
     -o "$APP/Contents/Resources/libcyclopmedia.dylib" \

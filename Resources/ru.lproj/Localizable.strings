@@ -101,3 +101,7 @@
 "Paste the script here" = "Вставьте сюда сценарий";
 "Ready" = "Готово";
 "Done" = "Готово";
+
+"Hide Notch When Idle" = "Скрывать чёлку в покое";
+"Show Panel Hotkey" = "Сочетание для панели";
+"Off" = "Выключено";

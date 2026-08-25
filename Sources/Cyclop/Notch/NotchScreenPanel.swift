@@ -22,6 +22,15 @@ final class NotchScreenPanel {
     /// `NotchController.updatePin` for why it is granted to a single screen.
     var isPinned = false
 
+    /// Открыто с клавиатуры и держится, пока курсор не пришёл сам.
+    ///
+    /// Панель открывается наведением, и правило «решает курсор» держится на
+    /// том, что курсор в этот момент на ней. У сочетания клавиш курсора нет:
+    /// без удержания панель схлопнулась бы через `closeDelay`, не дождавшись
+    /// взгляда. Удержание снимается тем же, чем и ставилось, — вторым нажатием,
+    /// приходом курсора на панель или кликом мимо неё.
+    var isHeldByHotkey = false
+
     private let vm: NotchViewModel
     private let pointer = PointerWatcher()
     private var panel: NotchPanel?
@@ -53,6 +62,20 @@ final class NotchScreenPanel {
     func toggle() {
         setOpen(!state.isOpen)
         pointer.setInside(state.isOpen)
+    }
+
+    /// То же с клавиатуры, но открытое остаётся стоять без курсора.
+    func toggleFromHotkey() {
+        let opening = !state.isOpen
+        isHeldByHotkey = opening
+        setOpen(opening)
+        pointer.setInside(opening)
+    }
+
+    /// Снять удержание, не закрывая: закроет обычная проверка курсора на
+    /// ближайшем такте, и закроет по тем же правилам, что и всегда.
+    func releaseHotkeyHold() {
+        isHeldByHotkey = false
     }
 
     /// Same display, same notch, moved: keep the panel and everything on it.
@@ -155,6 +178,9 @@ final class NotchScreenPanel {
         pointer.isPanelOpen = { [weak state] in state?.isOpen ?? false }
         pointer.onChange = { [weak self] inside in
             guard let self else { return }
+            // Курсор пришёл — дальше решает он, как и всегда: удержание было
+            // нужно ровно до этого момента.
+            if inside { isHeldByHotkey = false }
             // The one place the pointer does not decide — see `holdsOpen`.
             // Guarded here rather than inside `setOpen` so that the reasons
             // that are not the pointer, like the screen going to sleep, still
@@ -222,7 +248,7 @@ final class NotchScreenPanel {
     // MARK: - Open / close
 
     /// Whether this screen is the one a running script is pinning open.
-    private var holdsOpen: Bool { isPinned && vm.holdsOpen }
+    private var holdsOpen: Bool { isHeldByHotkey || (isPinned && vm.holdsOpen) }
 
     /// Hands the keyboard to the panel, or gives it back.
     private func setKeyboard(_ wants: Bool) {
@@ -261,6 +287,10 @@ final class NotchScreenPanel {
     /// would be a panel stuck open on a screen nobody is looking at.
     private func setOpen(_ open: Bool) {
         guard state.isOpen != open else { return }
+        // Закрытие любой причиной снимает удержание: иначе оно пережило бы сон
+        // экрана и смену пространства и встретило бы пользователя панелью,
+        // открытой неизвестно когда.
+        if !open { isHeldByHotkey = false }
         // Closing ends the take, but only on the screen reading it: the pin is
         // a consequence of the script moving, so the script stops with the
         // panel it is moving on — and not with any other panel folding away.

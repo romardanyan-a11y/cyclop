@@ -12,9 +12,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller = NotchController()
         controller?.install()
         installStatusItem()
+        HotkeyCenter.shared.onFire = { [weak self] in
+            self?.controller?.toggleFromHotkey()
+        }
+        HotkeyCenter.shared.install()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        HotkeyCenter.shared.teardown()
         controller?.teardown()
     }
 

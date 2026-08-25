@@ -9,10 +9,12 @@ import Combine
 @MainActor
 final class NotchController {
     private var vm: NotchViewModel?
+    private var clickMonitor: Any?
     private var panels: [CGDirectDisplayID: NotchScreenPanel] = [:]
     private var cancellables = Set<AnyCancellable>()
 
     func install() {
+        installClickRelease()
         let vm = NotchViewModel()
         self.vm = vm
         vm.start()
@@ -47,6 +49,10 @@ final class NotchController {
     }
 
     func teardown() {
+        if let clickMonitor {
+            NSEvent.removeMonitor(clickMonitor)
+            self.clickMonitor = nil
+        }
         vm?.stop()
         panels.values.forEach { $0.teardown() }
     }
@@ -55,6 +61,29 @@ final class NotchController {
     /// already on, since that is the screen being looked at.
     func toggle() {
         target()?.toggle()
+    }
+
+    /// От сочетания клавиш: тот же экран, что и от меню-бара, но открытая
+    /// панель остаётся стоять — курсора, который бы её держал, нет.
+    func toggleFromHotkey() {
+        target()?.toggleFromHotkey()
+    }
+
+    /// Клик мимо панели снимает удержание — тем же жестом, каким закрывают
+    /// всё остальное, что открылось не курсором.
+    ///
+    /// Монитор именно глобальный: события своим окнам он не показывает, и клик
+    /// по самой панели его не трогает, что здесь ровно то, что нужно. Мышиные
+    /// события, в отличие от клавиатурных, доступны без «Универсального
+    /// доступа», так что разрешений это по-прежнему не просит.
+    private func installClickRelease() {
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.panels.values.forEach { $0.releaseHotkeyHold() }
+            }
+        }
     }
 
     /// What the menu bar switches. Handed out rather than wrapped: the menu

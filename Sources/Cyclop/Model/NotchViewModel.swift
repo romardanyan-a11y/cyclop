@@ -155,6 +155,11 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// Прятать сложенную панель целиком на маках без выреза. Полоска в 8 pt
+    /// закрывает мало, но у верхнего края видна — кому мешает и она, тот
+    /// убирает её отсюда, а область наведения остаётся прежней.
+    static let hideIdleNotchKey = "hideIdleNotch"
+
     /// Off switch for people who copy images all day and do not want them kept.
     static let saveClipboardImagesKey = "saveClipboardImages"
 

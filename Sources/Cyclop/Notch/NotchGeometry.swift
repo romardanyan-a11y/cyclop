@@ -287,6 +287,24 @@ struct NotchGeometry {
     /// Size of the collapsed target: the notch itself, or the strip above.
     var collapsedSize: CGSize { CGSize(width: notchSize.width, height: collapsedDepth) }
 
+    /// Высота нарисованной чёлки в покое на маках без выреза.
+    static let syntheticIdleDepth: CGFloat = 8
+
+    /// Тело, которое рисуется, пока панель сложена.
+    ///
+    /// Физический вырез — дыра в матрице: закрасить его чёрным нечем помешать,
+    /// под ним ничего нет. Синтетический рисуется поверх работающего меню-бара,
+    /// и во всю его высоту закрывает то, что там лежит. Область наведения при
+    /// этом остаётся такой, какой её посчитал `collapsedDepth`: попасть в
+    /// панель не сложнее, чем было, — видно её просто меньше.
+    var collapsedBodySize: CGSize {
+        guard !isPhysical else { return notchSize }
+        return CGSize(
+            width: notchSize.width,
+            height: min(Self.syntheticIdleDepth, notchSize.height)
+        )
+    }
+
     /// Hover target while collapsed, in global screen coordinates. Slightly
     /// taller than the notch so the panel opens just before the pointer lands.
     var hoverRect: CGRect {

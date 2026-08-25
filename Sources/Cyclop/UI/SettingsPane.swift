@@ -9,6 +9,9 @@ import ServiceManagement
 struct SettingsPane: View {
     @ObservedObject var shelf: ShelfStore
 
+    @AppStorage(NotchViewModel.hideIdleNotchKey) private var hideIdleNotch = false
+    @AppStorage(HotkeyCenter.bindingKey) private var hotkey = HotkeyCenter.Binding.commandOptionSpace.rawValue
+
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var saveClipboardImages = NotchViewModel.saveClipboardImagesEnabled
     @State private var allDisplays = NotchGeometry.showsOnAllDisplays
@@ -18,6 +21,12 @@ struct SettingsPane: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 14) {
                 section(localized("General")) {
+                    hotkeyRow
+                    toggleRow(
+                        symbol: "eye.slash",
+                        title: localized("Hide Notch When Idle"),
+                        isOn: $hideIdleNotch
+                    )
                     toggleRow(
                         symbol: "arrow.forward.to.line",
                         title: localized("Launch at Login"),
@@ -154,6 +163,41 @@ struct SettingsPane: View {
                     .fill(Theme.surface)
             )
         }
+    }
+
+    /// Список, а не запись сочетания с клавиатуры: все варианты — Space с
+    /// разными модификаторами, и выбрать из пяти строк быстрее, чем целиться
+    /// в поле, которое ловит нажатия. Занятое другим приложением сочетание
+    /// просто не сработает, поэтому их несколько.
+    private var hotkeyRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "command")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.secondary)
+                .frame(width: 16)
+            Text(localized("Show Panel Hotkey"))
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.white)
+            Spacer(minLength: 8)
+            Menu {
+                ForEach(HotkeyCenter.Binding.allCases, id: \.rawValue) { option in
+                    Button(action: { hotkey = option.rawValue }) {
+                        Text(option.title)
+                    }
+                }
+            } label: {
+                Text(currentHotkeyTitle)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var currentHotkeyTitle: String {
+        (HotkeyCenter.Binding(rawValue: hotkey) ?? .commandOptionSpace).title
     }
 
     private func toggleRow(symbol: String, title: String, isOn: Binding<Bool>) -> some View {

@@ -6,7 +6,18 @@ struct NotchContentView: View {
     /// here; everything shown is in `vm`, the same on every display.
     @ObservedObject var panel: PanelState
 
+    /// Через AppStorage, а не разовым чтением UserDefaults: переключатель
+    /// живёт во вкладке настроек этой же панели, и вид должен перерисоваться
+    /// сразу, не дожидаясь перезапуска.
+    @AppStorage(NotchViewModel.hideIdleNotchKey) private var hideIdleNotch = false
+
     private var isOpen: Bool { panel.isActive }
+
+    /// Настройка касается только синтетической чёлки: у настоящей прятать
+    /// нечего, это дыра в экране, и скрытие фигуры её не уберёт.
+    private var showsIdleShape: Bool {
+        isOpen || panel.geometry.isPhysical || !hideIdleNotch
+    }
     private var size: CGSize { panel.bodySize }
     private var topRadius: CGFloat { isOpen ? Theme.openTopRadius : Theme.collapsedTopRadius }
 
@@ -21,6 +32,7 @@ struct NotchContentView: View {
             .fill(Color.black)
             .frame(width: size.width + 2 * topRadius, height: size.height)
             .shadow(color: .black.opacity(isOpen ? 0.5 : 0), radius: 18, y: 8)
+            .opacity(showsIdleShape ? 1 : 0)
 
             VStack(spacing: 0) {
                 header
