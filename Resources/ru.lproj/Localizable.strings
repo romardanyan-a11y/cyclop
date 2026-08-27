@@ -109,3 +109,6 @@
 
 "Hotkey Opens" = "Сочетание открывает";
 "Current Tab" = "Текущую";
+
+"Paste on Enter" = "Вставлять по Enter";
+"Open on Hover" = "Открывать наведением";

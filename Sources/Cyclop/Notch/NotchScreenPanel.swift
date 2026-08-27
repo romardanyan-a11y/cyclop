@@ -175,15 +175,35 @@ final class NotchScreenPanel {
         case NavKey.down:
             vm.moveSelection(by: 1)
         case NavKey.ret, NavKey.enter:
-            // На списках Enter делает то же, что клик по карточке. На
-            // текстовых вкладках делать нечего — там он передаёт клавиатуру
-            // полю, то есть начинает ввод. Обратно её отдаёт Esc самой вкладки.
-            if vm.activateSelection() { return true }
+            // На списках Enter кладёт карточку в буфер и закрывает панель:
+            // выбрали — значит, за этим и открывали. На текстовых вкладках
+            // выбирать нечего, там он передаёт клавиатуру полю, то есть
+            // начинает ввод; обратно её отдаёт Esc самой вкладки.
+            if vm.activateSelection() {
+                finishAndPaste()
+                return true
+            }
             if vm.tab.needsKeyboard { state.wantsKeyboard = true }
         default:
             return false
         }
         return true
+    }
+
+    /// Закрыть панель и, если это разрешено, вставить выбранное туда, где
+    /// стоял курсор ввода.
+    ///
+    /// Порядок обязателен. Пока панель на экране, ключевое окно — её, и ⌘V
+    /// прилетел бы в неё саму; отправлять можно только после того, как она
+    /// ушла и ключ вернулся прежнему окну. Проход через очередь главного цикла
+    /// и есть та пауза, за которую это происходит.
+    private func finishAndPaste() {
+        let pasting = NotchViewModel.autoPasteEnabled && Paste.isPermitted
+        dismissCentered()
+        guard pasting else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            Paste.send()
+        }
     }
 
     /// Вкладки заворачиваются по кругу: их девять, они стоят кольцом на двух
@@ -342,7 +362,11 @@ final class NotchScreenPanel {
         // case: a pointer crossing them is usually on its way to one of them,
         // and unfolding the panel over what it was reaching for is the whole
         // complaint. There, staying put is what asks for the panel.
-        pointer.openDelay = geometry.guardsIcons ? 0.3 : 0.05
+        // Выдержка перед открытием: у настоящего выреза короткая — там под
+        // курсором дыра, задевать нечего. У нарисованной чёлки под полосой
+        // живёт чужое: меню-бар, а в полноэкранном окне и строка вкладок.
+        // Треть секунды — это разница между «навёл» и «пронёс мимо».
+        pointer.openDelay = geometry.isPhysical ? 0.05 : 0.3
         pointer.isDragging = { [weak root] in root?.isReceivingDrag ?? false }
         pointer.isPanelOpen = { [weak state] in state?.isOpen ?? false }
         pointer.onChange = { [weak self] inside in
@@ -352,6 +376,11 @@ final class NotchScreenPanel {
             // экрана к панели отношения не имеет, и курсор, заброшенный к
             // вырезу, закрыл бы то, что открыто совсем в другом месте.
             if inside, !state.isCentered { isHeldByHotkey = false }
+            // Наведение можно выключить совсем: у кого панель вызывается с
+            // клавиатуры, тому верхняя кромка нужна не больше, чем любому
+            // другому окну. Проверка живая, а не при постройке, — переключатель
+            // лежит во вкладке настроек этой же панели.
+            if inside, !state.isCentered, !NotchViewModel.hoverOpensEnabled { return }
             // The one place the pointer does not decide — see `holdsOpen`.
             // Guarded here rather than inside `setOpen` so that the reasons
             // that are not the pointer, like the screen going to sleep, still

@@ -155,6 +155,22 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// Открывать ли панель наведением на верхнюю кромку.
+    static let hoverOpensKey = "hoverOpens"
+
+    static var hoverOpensEnabled: Bool {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: hoverOpensKey) != nil else { return true }
+        return defaults.bool(forKey: hoverOpensKey)
+    }
+
+    /// Вставлять выбранное по Enter в то окно, где стоял курсор ввода.
+    /// Выключено по умолчанию: это единственное, ради чего приложению нужно
+    /// разрешение системы.
+    static let autoPasteKey = "autoPaste"
+
+    static var autoPasteEnabled: Bool { UserDefaults.standard.bool(forKey: autoPasteKey) }
+
     /// С какой вкладки открывается вызов с клавиатуры.
     static let hotkeyTabKey = "hotkeyTab"
 

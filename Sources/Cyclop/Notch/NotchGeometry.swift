@@ -282,7 +282,15 @@ struct NotchGeometry {
     ///
     /// A notch the icons do not reach has neither problem, so it is treated
     /// like the hole: it answers everywhere it is drawn.
-    var collapsedDepth: CGFloat { guardsIcons ? 8 : notchSize.height }
+    /// Синтетическая чёлка отвечает ровно там, где нарисована, — полосой в
+    /// 8 pt, а не на всю высоту меню-бара.
+    ///
+    /// Иначе получается невидимая ловушка: чёрного видно 8 pt, а открывается
+    /// панель с 25, и остальные 17 — это чужая полоса, по которой курсор
+    /// ходит по своим делам. Полноэкранный браузер держит там строку вкладок,
+    /// и попытка попасть в среднюю вкладку разворачивает панель поверх неё.
+    /// Настоящий вырез отвечает целиком: он и занят целиком.
+    var collapsedDepth: CGFloat { isPhysical ? notchSize.height : Self.syntheticIdleDepth }
 
     /// Size of the collapsed target: the notch itself, or the strip above.
     var collapsedSize: CGSize { CGSize(width: notchSize.width, height: collapsedDepth) }

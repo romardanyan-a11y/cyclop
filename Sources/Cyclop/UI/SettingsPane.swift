@@ -12,6 +12,8 @@ struct SettingsPane: View {
     @AppStorage(NotchViewModel.hideIdleNotchKey) private var hideIdleNotch = false
     @AppStorage(HotkeyCenter.bindingKey) private var hotkey = HotkeyCenter.Binding.optionSpace.rawValue
     @AppStorage(NotchViewModel.hotkeyTabKey) private var hotkeyTab = NotchViewModel.Tab.clipboard.rawValue
+    @AppStorage(NotchViewModel.hoverOpensKey) private var hoverOpens = true
+    @AppStorage(NotchViewModel.autoPasteKey) private var autoPaste = false
     @ObservedObject private var hotkeys = HotkeyCenter.shared
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -25,6 +27,16 @@ struct SettingsPane: View {
                 section(localized("General")) {
                     hotkeyRow
                     hotkeyTabRow
+                    toggleRow(
+                        symbol: "arrow.down.doc",
+                        title: localized("Paste on Enter"),
+                        isOn: autoPasteBinding
+                    )
+                    toggleRow(
+                        symbol: "cursorarrow",
+                        title: localized("Open on Hover"),
+                        isOn: $hoverOpens
+                    )
                     toggleRow(
                         symbol: "eye.slash",
                         title: localized("Hide Notch When Idle"),
@@ -210,6 +222,20 @@ struct SettingsPane: View {
 
     /// С какой вкладки открывается вызов с клавиатуры. Пустая строка — «как
     /// была»: не всем нужна одна и та же вкладка каждый раз.
+    /// Включение спрашивает разрешение системы — единственное, которое это
+    /// приложение вообще просит. Спрашивается ровно в момент включения: диалог
+    /// при запуске у того, кому эта возможность не нужна, был бы вымогательством
+    /// доверия ни за что.
+    private var autoPasteBinding: Binding<Bool> {
+        Binding(
+            get: { autoPaste },
+            set: { wants in
+                autoPaste = wants
+                if wants { Paste.requestPermission() }
+            }
+        )
+    }
+
     private var hotkeyTabRow: some View {
         HStack(spacing: 8) {
             Image(systemName: "rectangle.stack")
