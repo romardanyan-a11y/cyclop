@@ -161,8 +161,8 @@ extension Translator: WKUIDelegate {
     /// другого, и спрашивать о нём ради одной кнопки на сайте незачем.
     func webView(
         _ webView: WKWebView,
-        requestMediaCapturePermissionFor origin: WKSecurityOrigin,
-        initiatedByFrame frame: WKFrameInfo,
+        decideMediaCapturePermissionsFor origin: WKSecurityOrigin,
+        initiatedBy frame: WKFrameInfo,
         type: WKMediaCaptureType
     ) async -> WKPermissionDecision {
         .deny
