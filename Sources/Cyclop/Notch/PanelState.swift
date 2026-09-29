@@ -47,12 +47,12 @@ final class PanelState: ObservableObject {
     /// that step the collapsed size and leave the whole body drawn but deaf to
     /// the pointer.
     ///
-    /// One tab is taller than the rest. Type large enough to read at a glance
-    /// leaves room for two lines in the standard body, and two lines is not a
-    /// teleprompter — it is a countdown. The extra height buys the paragraph
-    /// the reader needs to see coming.
+    /// Two tabs are taller than the rest — see `Tab.isTall`. Type large enough
+    /// to read at a glance leaves room for two lines in the standard body, and
+    /// two lines is not a teleprompter — it is a countdown. The extra height
+    /// buys the paragraph the reader needs to see coming.
     var openBodySize: CGSize {
-        vm.tab == .teleprompter ? geometry.tallExpandedSize : geometry.expandedSize
+        vm.tab.isTall ? geometry.tallExpandedSize : geometry.expandedSize
     }
 
     /// Size of the visible body for the current state.

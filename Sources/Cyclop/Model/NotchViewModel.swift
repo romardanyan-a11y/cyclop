@@ -39,6 +39,11 @@ final class NotchViewModel: ObservableObject {
         /// that arriving and typing is a single move.
         var needsKeyboard: Bool { self == .translate || self == .snippets || self == .notes }
 
+        /// Tabs on the tall body. The teleprompter needs a paragraph in view;
+        /// the translator is a web page whose field, model switch and result
+        /// only fit together at this height.
+        var isTall: Bool { self == .teleprompter || self == .translate }
+
         /// Which rail the icon sits on. The left one carries the original six
         /// and is full — icon height is a ceiling now, not a constant (#26,
         /// #27), so a seventh icon would not overflow the panel, but it would

@@ -55,10 +55,8 @@
 "Jot something down…" = "Jot something down…";
 
 /* Translate */
-"Translation Languages…" = "Translation Languages…";
+"Yandex Translate did not load." = "Yandex Translate did not load.";
 "Retry" = "Retry";
-"The %@ → %@ language pack is not installed." = "The %@ → %@ language pack is not installed.";
-"macOS does not translate this pair of languages." = "macOS does not translate this pair of languages.";
 
 /* Calendar */
 "Join" = "Join";

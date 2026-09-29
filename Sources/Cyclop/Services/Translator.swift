@@ -1,135 +1,184 @@
 import AppKit
-import Translation
+import WebKit
 
-/// Apple's on-device translator, driven from the panel.
+/// Яндекс Переводчик — сам сайт, в одном веб-виде на всё приложение.
 ///
-/// The session is not ours to create: `translationTask` hands one over and owns
-/// its lifetime, so everything here is about deciding *what* to translate and
-/// holding the result. `TranslatePane` supplies the session.
+/// Переводит страница, а не мы. Режим «Переводчик AI» у неё включён по
+/// умолчанию, и переключатель под полем ввода сайт запоминает сам — в своём
+/// хранилище, которое здесь лежит на диске. Поэтому отсюда перевод никто не
+/// ведёт: страница только живёт между открытиями панели и получает клавиатуру.
+///
+/// API у «Переводчика AI» нет: у Яндекс Облака свой перевод, классический, а
+/// режим с языковой моделью есть только на сайте и в приложениях.
 @MainActor
-final class Translator: ObservableObject {
-    static let russian = Locale.Language(identifier: "ru")
-    static let english = Locale.Language(identifier: "en")
+final class Translator: NSObject, ObservableObject {
+    static let home = URL(string: "https://translate.yandex.ru/")!
 
-    /// Both ends are always named. Leaving the source to the framework looks
-    /// tempting, but its identifier is a separate asset that is not installed
-    /// either — auto-detection fails with `unableToIdentifyLanguage`, and the
-    /// translation that follows hangs instead of returning an error.
-    struct Route: Equatable {
-        var source: Locale.Language
-        var target: Locale.Language
+    /// Телефонная вёрстка. Настольная раскладывает две колонки рядом только
+    /// в окне шире тысячи точек, а уже — ставит их друг под другом, и поле
+    /// ввода одно занимает всю панель, выталкивая перевод за нижний край.
+    /// Телефонная сделана ровно под такой размер: поле, переключатель модели
+    /// и перевод помещаются в высокую панель целиком.
+    private static let userAgent =
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 "
+        + "(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+
+    /// Страница не загрузилась: нет сети или сайт не ответил.
+    @Published private(set) var failed = false
+
+    /// Создаётся при первом открытии вкладки, а не при запуске: веб-вид — это
+    /// отдельный процесс WebKit, и до этой вкладки доходит не каждый запуск.
+    private(set) lazy var webView: TranslatorWebView = makeWebView()
+
+    /// Курсор просили в поле, пока страница ещё грузилась. Ставится, когда
+    /// она догрузится: раньше поля в документе нет.
+    private var focusPending = false
+
+    private func makeWebView() -> TranslatorWebView {
+        let configuration = WKWebViewConfiguration()
+        // Хранилище на диске: настройки самого сайта — модель перевода,
+        // закрытое приветствие, вход в Яндекс ID — переживают перезапуск.
+        configuration.websiteDataStore = .default()
+        let view = TranslatorWebView(frame: .zero, configuration: configuration)
+        view.customUserAgent = Self.userAgent
+        // Панель тёмная, и до первой отрисовки страницы на её месте должен
+        // быть чёрный, а не белый прямоугольник. Саму страницу в тёмную тему
+        // переводит внешний вид окна: у сайта по умолчанию тема «как в системе».
+        view.underPageBackgroundColor = .black
+        view.navigationDelegate = self
+        view.uiDelegate = self
+        view.load(URLRequest(url: Self.home))
+        return view
     }
 
-    /// Keyed by the pane's debounced task. The counter is what makes a retry of
-    /// unchanged text a new request rather than a no-op.
-    struct Request: Equatable {
-        var text: String
-        var attempt: Int
+    func reload() {
+        failed = false
+        if webView.url == nil {
+            webView.load(URLRequest(url: Self.home))
+        } else {
+            webView.reload()
+        }
     }
 
-    @Published var input = ""
-    @Published private(set) var output = ""
-    @Published private(set) var failure: String?
-    /// The failure is a missing language pack, which is a thing the user can
-    /// go and fix — so the pane offers the button that takes them there.
-    @Published private(set) var needsDownload = false
-
-    private var attempt = 0
-
-    var request: Request { Request(text: input, attempt: attempt) }
-    var trimmed: String { input.trimmingCharacters(in: .whitespacesAndNewlines) }
-    var route: Route { Self.route(for: trimmed) }
-
-    /// Russian goes out to English, everything else comes in to Russian.
-    ///
-    /// Decided by script rather than by language detection: a single word is
-    /// far too short to identify reliably, and "привет" comes back as Bulgarian
-    /// often enough to matter.
-    static func route(for text: String) -> Route {
-        let cyrillic = text.unicodeScalars.contains { (0x0400...0x04FF).contains($0.value) }
-        return cyrillic
-            ? Route(source: russian, target: english)
-            : Route(source: english, target: russian)
-    }
-
-    func retry() {
-        attempt += 1
-    }
-
-    func clear() {
-        output = ""
-        failure = nil
-        needsDownload = false
-    }
-
-    func reset() {
-        input = ""
-        clear()
-    }
-
-    func run(_ session: TranslationSession) async {
-        let text = trimmed
-        guard !text.isEmpty else { clear(); return }
-        guard let source = session.sourceLanguage, let target = session.targetLanguage else { return }
-
-        // No language pack ships installed. `prepareTranslation()` is what asks
-        // for one, but it blocks until its system prompt is answered — and that
-        // prompt has nowhere to appear over a borderless panel of an app that
-        // never activates, so it would hang forever. Check instead, and send
-        // the user to the one place that can actually install it.
-        let status = await LanguageAvailability().status(from: source, to: target)
-        guard status == .installed else {
-            output = ""
-            needsDownload = status == .supported
-            failure = needsDownload
-                ? localized("The %@ → %@ language pack is not installed.", Self.name(source), Self.name(target))
-                : localized("macOS does not translate this pair of languages.")
+    /// Курсор в поле ввода. `#textarea` — поле телефонной вёрстки,
+    /// `#fakeArea` — настольной, на случай если сайт отдаст её.
+    func focusInput() {
+        guard let window = webView.window else { return }
+        window.makeFirstResponder(webView)
+        guard !webView.isLoading else {
+            focusPending = true
             return
         }
-
-        do {
-            let response = try await session.translate(text)
-            guard !Task.isCancelled else { return }
-            output = response.targetText
-            failure = nil
-            needsDownload = false
-        } catch {
-            guard !Task.isCancelled else { return }
-            output = ""
-            needsDownload = false
-            failure = error.localizedDescription
-        }
+        webView.evaluateJavaScript(
+            "(document.querySelector('#textarea') || document.querySelector('#fakeArea'))?.focus()",
+            completionHandler: nil
+        )
     }
 
-    func copyOutput() {
-        guard !output.isEmpty else { return }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(output, forType: .string)
+    func resignInput() {
+        focusPending = false
+        guard let window = webView.window,
+              let responder = window.firstResponder as? NSView,
+              responder.isDescendant(of: webView) else { return }
+        window.makeFirstResponder(nil)
     }
 
-    /// "Русский", "English" — for the column headers. Named in the language the
-    /// panel itself is in, not in the system's: those two can differ, and a
-    /// column headed in one language above a button worded in another reads as
-    /// a mistake.
-    static func name(_ language: Locale.Language) -> String {
-        guard let code = language.languageCode?.identifier,
-              let name = Locale(identifier: appLanguage).localizedString(forLanguageCode: code) else {
-            return language.languageCode?.identifier.uppercased() ?? "?"
-        }
-        return name.prefix(1).uppercased() + name.dropFirst()
+    /// Ссылка ведёт на сам переводчик или на вход в Яндекс ID. Остальное —
+    /// справка, соцсети, другие сервисы — открывается в браузере: в панели
+    /// у страницы нет кнопки «назад», и уйдя с переводчика, на него не вернуться.
+    private static func staysInPanel(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return true }
+        return host.hasPrefix("translate.yandex.") || host.hasPrefix("passport.yandex.")
     }
+}
 
-    /// Short code for the header badge — "EN → RU" reads at a glance where a
-    /// spelled-out name would not fit in the strip.
-    static func code(_ language: Locale.Language) -> String {
-        language.languageCode?.identifier.uppercased() ?? "?"
-    }
-
-    /// System Settings → General → Language & Region, which is where the
-    /// "Translation Languages…" button lives.
-    static func openLanguageSettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension") else { return }
+extension Translator: WKNavigationDelegate {
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction
+    ) async -> WKNavigationActionPolicy {
+        // Только клики по ссылкам. Перенаправления пропускаются все: вход в
+        // Яндекс ID идёт через цепочку чужих адресов и обрывается на первом же.
+        guard navigationAction.navigationType == .linkActivated,
+              let url = navigationAction.request.url,
+              !Self.staysInPanel(url) else { return .allow }
         NSWorkspace.shared.open(url)
+        return .cancel
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        failed = false
+        if focusPending {
+            focusPending = false
+            focusInput()
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        noteFailure(error)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        noteFailure(error)
+    }
+
+    /// Процесс страницы система снимает при нехватке памяти, и веб-вид
+    /// остаётся пустым. Загрузить заново — всё, что тут можно сделать.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        webView.reload()
+    }
+
+    private func noteFailure(_ error: Error) {
+        // Отменённая загрузка — это новая, начатая поверх, а не сбой.
+        guard (error as NSError).code != NSURLErrorCancelled else { return }
+        failed = true
+    }
+}
+
+extension Translator: WKUIDelegate {
+    /// Ссылки в новом окне: окон у панели нет, так что либо сюда же, либо в браузер.
+    func webView(
+        _ webView: WKWebView,
+        createWebViewWith configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        if let url = navigationAction.request.url {
+            if Self.staysInPanel(url) {
+                webView.load(URLRequest(url: url))
+            } else {
+                NSWorkspace.shared.open(url)
+            }
+        }
+        return nil
+    }
+
+    /// Голосовой ввод выключен: микрофон приложению не нужен ни для чего
+    /// другого, и спрашивать о нём ради одной кнопки на сайте незачем.
+    func webView(
+        _ webView: WKWebView,
+        requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+        initiatedByFrame frame: WKFrameInfo,
+        type: WKMediaCaptureType
+    ) async -> WKPermissionDecision {
+        .deny
+    }
+}
+
+/// Веб-вид, у которого Esc отдаёт клавиатуру обратно, как в заметках.
+/// Остальные клавиши — странице.
+final class TranslatorWebView: WKWebView {
+    var onEscape: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53, let onEscape {
+            onEscape()
+            return
+        }
+        super.keyDown(with: event)
     }
 }

@@ -122,7 +122,7 @@ struct NotchContentView: View {
                     .foregroundStyle(next.isRunning ? Color.white.opacity(0.8) : Theme.tertiary)
             }
         case .translate:
-            // Nothing: the columns name both languages already, and the strip
+            // Nothing: the page names both languages itself, and the strip
             // is the one part of the panel worth not spending on a repeat.
             EmptyView()
         case .notes:
