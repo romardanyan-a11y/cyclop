@@ -15,6 +15,7 @@ struct SettingsPane: View {
     @AppStorage(NotchViewModel.hoverOpensKey) private var hoverOpens = true
     @AppStorage(NotchViewModel.autoPasteKey) private var autoPaste = false
     @ObservedObject private var hotkeys = HotkeyCenter.shared
+    @ObservedObject private var lidSleep = LidSleep.shared
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var saveClipboardImages = NotchViewModel.saveClipboardImagesEnabled
@@ -55,6 +56,26 @@ struct SettingsPane: View {
                         title: localized("Show on All Displays"),
                         isOn: allDisplaysBinding
                     )
+                }
+
+                section(localized("Power")) {
+                    toggleRow(
+                        symbol: "laptopcomputer",
+                        title: localized("Stay Awake with Lid Closed"),
+                        isOn: lidSleepBinding
+                    )
+                    .disabled(lidSleep.isBusy)
+                    .opacity(lidSleep.isBusy ? 0.4 : 1)
+                    // Запрет сна — настройка системы, а не приложения: он
+                    // остаётся и после выхода из Cyclop. Об этом и о сумке
+                    // надо сказать рядом с галочкой, а не в справке.
+                    Text(localized("Asks for your password. While on, the Mac never sleeps, even after Cyclop quits — don't put it in a bag like this."))
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 4)
                 }
 
                 section(localized("Screenshots")) {
@@ -99,6 +120,7 @@ struct SettingsPane: View {
             launchAtLogin = SMAppService.mainApp.status == .enabled
             saveClipboardImages = NotchViewModel.saveClipboardImagesEnabled
             allDisplays = NotchGeometry.showsOnAllDisplays
+            lidSleep.refresh()
             refreshUsage()
         }
     }
@@ -147,6 +169,13 @@ struct SettingsPane: View {
                 allDisplays = wants
                 NotchGeometry.showsOnAllDisplays = wants
             }
+        )
+    }
+
+    private var lidSleepBinding: Binding<Bool> {
+        Binding(
+            get: { lidSleep.isDisabled },
+            set: { wants in lidSleep.set(wants) }
         )
     }
 

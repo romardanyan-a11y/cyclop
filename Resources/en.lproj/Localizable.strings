@@ -111,3 +111,10 @@
 
 "Paste on Enter" = "Paste on Enter";
 "Open on Hover" = "Open on Hover";
+
+/* Power */
+"Power" = "Power";
+"Stay Awake with Lid Closed" = "Stay Awake with Lid Closed";
+"Asks for your password. While on, the Mac never sleeps, even after Cyclop quits — don't put it in a bag like this." = "Asks for your password. While on, the Mac never sleeps, even after Cyclop quits — don't put it in a bag like this.";
+"Cyclop wants to keep this Mac awake with the lid closed." = "Cyclop wants to keep this Mac awake with the lid closed.";
+"Cyclop wants to let this Mac sleep again." = "Cyclop wants to let this Mac sleep again.";

@@ -110,3 +110,10 @@
 
 "Paste on Enter" = "Вставлять по Enter";
 "Open on Hover" = "Открывать наведением";
+
+/* Питание */
+"Power" = "Питание";
+"Stay Awake with Lid Closed" = "Не засыпать с закрытой крышкой";
+"Asks for your password. While on, the Mac never sleeps, even after Cyclop quits — don't put it in a bag like this." = "Спросит пароль. Пока включено, мак не засыпает совсем, даже после выхода из Cyclop, — в таком виде не убирай его в сумку.";
+"Cyclop wants to keep this Mac awake with the lid closed." = "Cyclop хочет, чтобы мак не засыпал с закрытой крышкой.";
+"Cyclop wants to let this Mac sleep again." = "Cyclop хочет снова разрешить маку засыпать.";
